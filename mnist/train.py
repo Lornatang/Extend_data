@@ -8,6 +8,7 @@
 
 import argparse
 import os
+import time
 
 import torch
 from torch import nn
@@ -77,19 +78,22 @@ class Generator(nn.Module):
         )
         # layer2输出尺寸(args.hidden_size * 4)x8x8
         self.layer2 = nn.Sequential(
-            nn.ConvTranspose2d(args.hidden_size * 8, args.hidden_size * 4, 4, 2, 1),
+            nn.ConvTranspose2d(args.hidden_size * 8,
+                               args.hidden_size * 4, 4, 2, 1),
             nn.BatchNorm2d(args.hidden_size * 4),
             nn.ReLU(True)
         )
         # layer3输出尺寸(args.hidden_size * 2)x16x16
         self.layer3 = nn.Sequential(
-            nn.ConvTranspose2d(args.hidden_size * 4, args.hidden_size * 2, 4, 2, 1),
+            nn.ConvTranspose2d(args.hidden_size * 4,
+                               args.hidden_size * 2, 4, 2, 1),
             nn.BatchNorm2d(args.hidden_size * 2),
             nn.ReLU(True)
         )
         # layer4输出尺寸(args.hidden_size)x32x32
         self.layer4 = nn.Sequential(
-            nn.ConvTranspose2d(args.hidden_size * 2, args.hidden_size, 4, 2, 1),
+            nn.ConvTranspose2d(args.hidden_size * 2,
+                               args.hidden_size, 4, 2, 1),
             nn.BatchNorm2d(args.hidden_size),
             nn.ReLU(True)
         )
@@ -153,40 +157,43 @@ class Discriminator(nn.Module):
         return out
 
 
-netG = Generator().to(device)
-netD = Discriminator().to(device)
+Generator = Generator().to(device)
+Discriminator = Discriminator().to(device)
+# Binary loss function optimization and Adam optimizer
+criterion = nn.BCELoss().to(device)
+optimizerG = torch.optim.Adam(
+    Generator.parameters(), lr=args.lr, betas=(0.5, 0.999))
+optimizerD = torch.optim.Adam(
+    Discriminator.parameters(), lr=args.lr, betas=(0.5, 0.999))
 
-criterion = nn.BCELoss()
-optimizerG = torch.optim.Adam(netG.parameters(), lr=args.lr, betas=(0.5, 0.999))
-optimizerD = torch.optim.Adam(netD.parameters(), lr=args.lr, betas=(0.5, 0.999))
 
-
-def train():
+def main():
     label = torch.FloatTensor(args.batch_size)
     real_label = 1
     fake_label = 0
     for epoch in range(1, args.max_epochs + 1):
+        start = time.time()
         for i, (img, _) in enumerate(data_loader):
             # 固定生成器G，训练鉴别器D
             optimizerD.zero_grad()
             # 让D尽可能的把真图片判别为1
             img = img.to(device)
-            output = netD(img)
+            output = Discriminator(img)
 
             label.data.fill_(real_label)
             label = label.to(device)
-            errD_real = criterion(output, label)
-            errD_real.backward()
+            errd_real = criterion(output, label)
+            errd_real.backward()
             # 让D尽可能把假图片判别为0
             label.data.fill_(fake_label)
             noise = torch.randn(args.batch_size, args.noise, 1, 1)
             noise = noise.to(device)
             # 生成假图
-            fake = netG(noise)
-            output = netD(fake.detach())  # 避免梯度传到G，因为G不用更新
-            errD_fake = criterion(output, label)
-            errD_fake.backward()
-            errD = errD_fake + errD_real
+            fake = Generator(noise)
+            output = Discriminator(fake.detach())  # 避免梯度传到G，因为G不用更新
+            errd_fake = criterion(output, label)
+            errd_fake.backward()
+            errd = errd_fake + errd_real
             optimizerD.step()
 
             # 固定鉴别器D，训练生成器G
@@ -194,16 +201,18 @@ def train():
             # 让D尽可能把G生成的假图判别为1
             label.data.fill_(real_label)
             label = label.to(device)
-            output = netD(fake)
-            errG = criterion(output, label)
-            errG.backward()
+            output = Discriminator(fake)
+            errg = criterion(output, label)
+            errg.backward()
             optimizerG.step()
 
             if (i + 1) % 200 == 0:
+                end = time.time()
                 print(f"Epoch: [{epoch}/{args.max_epochs}], "
                       f"Step: [{i}/{len(data_loader)}], "
-                      f"Loss_D: {errD.item():.3f}, "
-                      f"Loss_G {errG.item():.3f}.")
+                      f"Loss_D: {errd.item():.3f}, "
+                      f"Loss_G {errg.item():.3f}, "
+                      f"Time: {end-start:.2f} sec.")
                 save_image(fake.data, f"{args.external_dir}/{epoch}.jpg", normalize=True)
 
     # Save the model checkpoints
@@ -212,4 +221,4 @@ def train():
 
 
 if __name__ == '__main__':
-    train()
+    main()
