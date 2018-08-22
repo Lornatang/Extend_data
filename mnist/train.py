@@ -8,8 +8,8 @@
 
 import argparse
 import os
-import time
 
+import time
 import torch
 from torch import nn
 from torch.utils import data
@@ -176,6 +176,8 @@ optimizerD = torch.optim.Adam(
 
 
 def main():
+    Generator.train()
+    Discriminator.train()
     label = torch.FloatTensor(args.batch_size)
     real_label = 1
     fake_label = 0
