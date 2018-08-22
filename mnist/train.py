@@ -8,8 +8,8 @@
 
 import argparse
 import os
-
 import time
+
 import torch
 from torch import nn
 from torch.utils import data
@@ -157,16 +157,14 @@ class Discriminator(nn.Module):
         return out
 
 
-Generator = Generator().to(device)
-Discriminator = Discriminator().to(device)
-# if torch.cuda.is_available():
-#     Generator = torch.load(args.model_dir + 'Generator.pth').to(device)
-#     Discriminator = torch.load(args.model_dir + 'Discriminator.pth').to(device)
-# else:
-#     Generator = torch.load(
-#         args.model_dir + 'Generator.pth', map_location='cpu')
-#     Discriminator = torch.load(
-#         args.model_dir + 'Discriminator.pth', map_location='cpu')
+# Generator = Generator().to(device)
+# Discriminator = Discriminator().to(device)
+if torch.cuda.is_available():
+    Generator.load_state_dict(torch.load(args.model_dir + 'Generator.pth'))
+    Discriminator.load_state_dict(torch.load(args.model_dir + 'Discriminator.pth', map_location='cpu'))
+else:
+    Generator.load_state_dict(torch.load(args.model_dir + 'Generator.pth', map_location='cpu'))
+    Discriminator.load_state_dict(torch.load(args.model_dir + 'Discriminator.pth', map_location='cpu'))
 # Binary loss function optimization and Adam optimizer
 criterion = nn.BCELoss().to(device)
 optimizerG = torch.optim.Adam(
