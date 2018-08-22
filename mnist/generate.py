@@ -10,6 +10,7 @@ import argparse
 import os
 
 import torch
+from torch import nn
 from torch.utils import data
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
@@ -116,8 +117,8 @@ def main():
         save_image(fake.data, f"{args.external_dir}/{i+1}.jpg", normalize=True)
 
     # Save the model checkpoints
-    torch.save(Generator, args.model_dir + 'Generator.pth')
-    torch.save(Discriminator, args.model_dir + 'Discriminator.pth')
+    # torch.save(Generator, args.model_dir + 'Generator.pth')
+    # torch.save(Discriminator, args.model_dir + 'Discriminator.pth')
 
 
 if __name__ == '__main__':
