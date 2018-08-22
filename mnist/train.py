@@ -8,8 +8,8 @@
 
 import argparse
 import os
-
 import time
+
 import torch
 from torch import nn
 from torch.utils import data
@@ -168,16 +168,14 @@ Discriminator = Discriminator().to(device)
 #     Discriminator = torch.load(
 #         args.model_dir + 'Discriminator.pth', map_location='cpu')
 # Binary loss function optimization and Adam optimizer
-criterion = nn.BCELoss()
+criterion = nn.BCELoss().to(device)
 optimizerG = torch.optim.Adam(
     Generator.parameters(), lr=args.lr, betas=(0.5, 0.999))
 optimizerD = torch.optim.Adam(
     Discriminator.parameters(), lr=args.lr, betas=(0.5, 0.999))
 
 
-def train():
-    Generator.train()
-    Discriminator.train()
+def main():
     label = torch.FloatTensor(args.batch_size)
     real_label = 1
     fake_label = 0
@@ -216,7 +214,7 @@ def train():
             errg.backward()
             optimizerG.step()
 
-            if (i + 1) % 2 == 0:
+            if (i + 1) % 200 == 0:
                 end = time.time()
                 print(f"Epoch: [{epoch}/{args.max_epochs}], "
                       f"Step: [{i}/{len(data_loader)}], "
@@ -225,10 +223,10 @@ def train():
                       f"Time: {end-start:.2f} sec.")
                 save_image(fake.data, f"{args.external_dir}/{epoch}.jpg", normalize=True)
 
-        # Save the model checkpoints
-        torch.save(optimizerG, args.model_dir + 'Generator.pth')
-        torch.save(optimizerD, args.model_dir + 'Discriminator.pth')
+    # Save the model checkpoints
+    torch.save(Generator, args.model_dir + 'Generator.pth')
+    torch.save(Discriminator, args.model_dir + 'Discriminator.pth')
 
 
 if __name__ == '__main__':
-    train()
+    main()
