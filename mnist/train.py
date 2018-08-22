@@ -226,8 +226,8 @@ def main():
                 save_image(fake.data, f"{args.external_dir}/{epoch}.jpg", normalize=True)
 
         # Save the model checkpoints
-        torch.save(Generator, args.model_dir + 'Generator.pth')
-        torch.save(Discriminator, args.model_dir + 'Discriminator.pth')
+        torch.save(Generator.state_dict(), args.model_dir + 'Generator.pth')
+        torch.save(Discriminator.state_dict(), args.model_dir + 'Discriminator.pth')
 
 
 if __name__ == '__main__':
