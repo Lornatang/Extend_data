@@ -8,8 +8,8 @@
 
 import argparse
 import os
-import time
 
+import time
 import torch
 from torch import nn
 from torch.utils import data
@@ -226,8 +226,8 @@ def main():
                 save_image(fake.data, f"{args.external_dir}/{epoch}.jpg", normalize=True)
 
         # Save the model checkpoints
-        torch.save(optimizerG, args.model_dir + 'Generator.pth')
-        torch.save(optimizerD, args.model_dir + 'Discriminator.pth')
+        torch.save(Generator, args.model_dir + 'Generator.pth')
+        torch.save(Discriminator, args.model_dir + 'Discriminator.pth')
 
 
 if __name__ == '__main__':
