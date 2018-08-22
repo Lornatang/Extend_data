@@ -8,8 +8,8 @@
 
 import argparse
 import os
-
 import time
+
 import torch
 from torch import nn
 from torch.utils import data
@@ -35,10 +35,10 @@ parser.add_argument('--lr', type=float, default=2e-4,
                     help="""Train optimizer learning rate. Default: 2e-4.""")
 parser.add_argument('--img_size', type=int, default=96,
                     help="""Input image size. Default: 96.""")
-parser.add_argument('--max_epochs', type=int, default=50,
-                    help="""Max epoch of train of. Default: 50.""")
-parser.add_argument('--display_epoch', type=int, default=2,
-                    help="""When epochs save image. Default: 2.""")
+parser.add_argument('--max_epochs', type=int, default=5,
+                    help="""Max epoch of train of. Default: 5.""")
+parser.add_argument('--display_epoch', type=int, default=1,
+                    help="""When epochs save image. Default: 1.""")
 parser.add_argument('--model_dir', type=str, default='../../models/pytorch/GAN/mnist/',
                     help="""Model save path dir. Default: '../../models/pytorch/GAN/mnist/'.""")
 args = parser.parse_args()
