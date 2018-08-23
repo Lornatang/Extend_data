@@ -157,14 +157,14 @@ class Discriminator(nn.Module):
         return out
 
 
-# Generator = Generator().to(device)
-# Discriminator = Discriminator().to(device)
-if torch.cuda.is_available():
-    Generator.load_state_dict(torch.load(args.model_dir + 'Generator.pth'))
-    Discriminator.load_state_dict(torch.load(args.model_dir + 'Discriminator.pth', map_location='cpu'))
-else:
-    Generator.load_state_dict(torch.load(args.model_dir + 'Generator.pth', map_location='cpu'))
-    Discriminator.load_state_dict(torch.load(args.model_dir + 'Discriminator.pth', map_location='cpu'))
+Generator = Generator().to(device)
+Discriminator = Discriminator().to(device)
+# if torch.cuda.is_available():
+#     Generator.load_state_dict(torch.load(args.model_dir + 'Generator.pth'))
+#     Discriminator.load_state_dict(torch.load(args.model_dir + 'Discriminator.pth', map_location='cpu'))
+# else:
+#     Generator.load_state_dict(torch.load(args.model_dir + 'Generator.pth', map_location='cpu'))
+#     Discriminator.load_state_dict(torch.load(args.model_dir + 'Discriminator.pth', map_location='cpu'))
 # Binary loss function optimization and Adam optimizer
 criterion = nn.BCELoss().to(device)
 optimizerG = torch.optim.Adam(
@@ -214,7 +214,7 @@ def main():
             errg.backward()
             optimizerG.step()
 
-            if (i + 1) % 200 == 0:
+            if (i + 1) % 2 == 0:
                 end = time.time()
                 print(f"Epoch: [{epoch}/{args.max_epochs}], "
                       f"Step: [{i}/{len(data_loader)}], "
@@ -223,9 +223,9 @@ def main():
                       f"Time: {end-start:.2f} sec.")
                 save_image(fake.data, f"{args.external_dir}/{epoch}.jpg", normalize=True)
 
-        # Save the model checkpoints
-        torch.save(Generator.state_dict(), args.model_dir + 'Generator.pth')
-        torch.save(Discriminator.state_dict(), args.model_dir + 'Discriminator.pth')
+                # Save the model checkpoints
+                torch.save(Generator.state_dict(), args.model_dir + 'Generator.pth')
+                torch.save(Discriminator.state_dict(), args.model_dir + 'Discriminator.pth')
 
 
 if __name__ == '__main__':
