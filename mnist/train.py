@@ -20,7 +20,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 latent_size = 64
 hidden_size = 256
 image_size = 784
-num_epochs = 200
+num_epochs = 100
 batch_size = 100
 sample_dir = 'samples'
 
@@ -85,7 +85,7 @@ def reset_grad():
 
 # Start training
 total_step = len(data_loader)
-for epoch in range(num_epochs):
+for epoch in range(1, num_epochs+1):
     for i, (images, _) in enumerate(data_loader):
         images = images.reshape(batch_size, -1).to(device)
 
@@ -141,7 +141,7 @@ for epoch in range(num_epochs):
                           real_score.mean().item(), fake_score.mean().item()))
 
     # Save real images
-    if (epoch + 1) == 1:
+    if epoch % 2 == 0:
         images = images.reshape(images.size(0), 1, 28, 28)
         save_image(denorm(images), os.path.join(sample_dir, 'real_images.jpg'))
 
@@ -150,5 +150,5 @@ for epoch in range(num_epochs):
     save_image(denorm(fake_images), os.path.join(sample_dir, 'fake_images-{}.jpg'.format(epoch + 1)))
 
 # Save the model checkpoints
-# torch.save(G.state_dict(), 'G.ckpt')
-# torch.save(D.state_dict(), 'D.ckpt')
+torch.save(G, 'G.pkl')
+torch.save(D, 'D.pkl')
