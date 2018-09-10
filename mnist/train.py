@@ -2,171 +2,153 @@
 # author: shiyipaisizuo
 # contact: shiyipaisizuo@gmail.com
 # file: train.py
-# time: 2018/8/15 07:27
+# time: 2018/9/01 07:27
 # license: MIT
 """
 
-import argparse
 import os
-import numpy as np
-import math
-
-import torchvision.transforms as transforms
+import torch
+import torchvision
+import torch.nn as nn
+from torchvision import transforms
 from torchvision.utils import save_image
 
-from torch.utils.data import DataLoader
-from torchvision import datasets
-from torch.autograd import Variable
+# Device configuration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-import torch.nn as nn
-import torch.nn.functional as F
-import torch
+# Hyper-parameters
+latent_size = 64
+hidden_size = 256
+image_size = 784
+num_epochs = 200
+batch_size = 100
+sample_dir = 'samples'
 
-os.makedirs('images', exist_ok=True)
+# Create a directory if not exists
+if not os.path.exists(sample_dir):
+    os.makedirs(sample_dir)
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--n_epochs', type=int, default=200, help='number of epochs of training')
-parser.add_argument('--batch_size', type=int, default=64, help='size of the batches')
-parser.add_argument('--lr', type=float, default=0.0002, help='adam: learning rate')
-parser.add_argument('--b1', type=float, default=0.5, help='adam: decay of first order momentum of gradient')
-parser.add_argument('--b2', type=float, default=0.999, help='adam: decay of first order momentum of gradient')
-parser.add_argument('--n_cpu', type=int, default=8, help='number of cpu threads to use during batch generation')
-parser.add_argument('--latent_dim', type=int, default=100, help='dimensionality of the latent space')
-parser.add_argument('--img_size', type=int, default=28, help='size of each image dimension')
-parser.add_argument('--channels', type=int, default=1, help='number of image channels')
-parser.add_argument('--sample_interval', type=int, default=400, help='interval betwen image samples')
-opt = parser.parse_args()
-print(opt)
+# Image processing
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize(mean=(0.5, 0.5, 0.5),  # 3 for RGB channels
+                         std=(0.5, 0.5, 0.5))])
 
-img_shape = (opt.channels, opt.img_size, opt.img_size)
+# MNIST dataset
+mnist = torchvision.datasets.MNIST(root='../data',
+                                   train=True,
+                                   transform=transform,
+                                   download=True)
 
-cuda = True if torch.cuda.is_available() else False
+# Data loader
+data_loader = torch.utils.data.DataLoader(dataset=mnist,
+                                          batch_size=batch_size,
+                                          shuffle=True)
 
+# Discriminator
+D = nn.Sequential(
+    nn.Linear(image_size, hidden_size),
+    nn.LeakyReLU(0.2),
+    nn.Linear(hidden_size, hidden_size),
+    nn.LeakyReLU(0.2),
+    nn.Linear(hidden_size, 1),
+    nn.Sigmoid())
 
-class Generator(nn.Module):
-    def __init__(self):
-        super(Generator, self).__init__()
+# Generator
+G = nn.Sequential(
+    nn.Linear(latent_size, hidden_size),
+    nn.ReLU(),
+    nn.Linear(hidden_size, hidden_size),
+    nn.ReLU(),
+    nn.Linear(hidden_size, image_size),
+    nn.Tanh())
 
-        def block(in_feat, out_feat, normalize=True):
-            layers = [nn.Linear(in_feat, out_feat)]
-            if normalize:
-                layers.append(nn.BatchNorm1d(out_feat, 0.8))
-            layers.append(nn.LeakyReLU(0.2, inplace=True))
-            return layers
+# Device setting
+D = D.to(device)
+G = G.to(device)
 
-        self.model = nn.Sequential(
-            *block(opt.latent_dim, 128, normalize=False),
-            *block(128, 256),
-            *block(256, 512),
-            *block(512, 1024),
-            nn.Linear(1024, int(np.prod(img_shape))),
-            nn.Tanh()
-        )
-
-    def forward(self, z):
-        img = self.model(z)
-        img = img.view(img.size(0), *img_shape)
-        return img
-
-
-class Discriminator(nn.Module):
-    def __init__(self):
-        super(Discriminator, self).__init__()
-
-        self.model = nn.Sequential(
-            nn.Linear(int(np.prod(img_shape)), 512),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(512, 256),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(256, 1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, img):
-        img_flat = img.view(img.size(0), -1)
-        validity = self.model(img_flat)
-
-        return validity
+# Binary cross entropy loss and optimizer
+criterion = nn.BCELoss()
+d_optimizer = torch.optim.Adam(D.parameters(), lr=0.0002)
+g_optimizer = torch.optim.Adam(G.parameters(), lr=0.0002)
 
 
-# Loss function
-adversarial_loss = torch.nn.BCELoss()
+def denorm(x):
+    out = (x + 1) / 2
+    return out.clamp(0, 1)
 
-# Initialize generator and discriminator
-generator = Generator()
-discriminator = Discriminator()
 
-if cuda:
-    generator.cuda()
-    discriminator.cuda()
-    adversarial_loss.cuda()
+def reset_grad():
+    d_optimizer.zero_grad()
+    g_optimizer.zero_grad()
 
-# Configure data loader
-os.makedirs('../../data/mnist', exist_ok=True)
-dataloader = torch.utils.data.DataLoader(
-    datasets.MNIST('../../data/mnist', train=True, download=True,
-                   transform=transforms.Compose([
-                       transforms.ToTensor(),
-                       transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                   ])),
-    batch_size=opt.batch_size, shuffle=True)
 
-# Optimizers
-optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
-optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
+# Start training
+total_step = len(data_loader)
+for epoch in range(num_epochs):
+    for i, (images, _) in enumerate(data_loader):
+        images = images.reshape(batch_size, -1).to(device)
 
-Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+        # Create the labels which are later used as input for the BCE loss
+        real_labels = torch.ones(batch_size, 1).to(device)
+        fake_labels = torch.zeros(batch_size, 1).to(device)
 
-# ----------
-#  Training
-# ----------
+        # ================================================================== #
+        #                      Train the discriminator                       #
+        # ================================================================== #
 
-for epoch in range(opt.n_epochs):
-    for i, (imgs, _) in enumerate(dataloader):
+        # Compute BCE_Loss using real images where BCE_Loss(x, y): - y * log(D(x)) - (1-y) * log(1 - D(x))
+        # Second term of the loss is always zero since real_labels == 1
+        outputs = D(images)
+        d_loss_real = criterion(outputs, real_labels)
+        real_score = outputs
 
-        # Adversarial ground truths
-        valid = Variable(Tensor(imgs.size(0), 1).fill_(1.0), requires_grad=False)
-        fake = Variable(Tensor(imgs.size(0), 1).fill_(0.0), requires_grad=False)
+        # Compute BCELoss using fake images
+        # First term of the loss is always zero since fake_labels == 0
+        z = torch.randn(batch_size, latent_size).to(device)
+        fake_images = G(z)
+        outputs = D(fake_images)
+        d_loss_fake = criterion(outputs, fake_labels)
+        fake_score = outputs
 
-        # Configure input
-        real_imgs = Variable(imgs.type(Tensor))
-
-        # -----------------
-        #  Train Generator
-        # -----------------
-
-        optimizer_G.zero_grad()
-
-        # Sample noise as generator input
-        z = Variable(Tensor(np.random.normal(0, 1, (imgs.shape[0], opt.latent_dim))))
-
-        # Generate a batch of images
-        gen_imgs = generator(z)
-
-        # Loss measures generator's ability to fool the discriminator
-        g_loss = adversarial_loss(discriminator(gen_imgs), valid)
-
-        g_loss.backward()
-        optimizer_G.step()
-
-        # ---------------------
-        #  Train Discriminator
-        # ---------------------
-
-        optimizer_D.zero_grad()
-
-        # Measure discriminator's ability to classify real from generated samples
-        real_loss = adversarial_loss(discriminator(real_imgs), valid)
-        fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
-        d_loss = (real_loss + fake_loss) / 2
-
+        # Backprop and optimize
+        d_loss = d_loss_real + d_loss_fake
+        reset_grad()
         d_loss.backward()
-        optimizer_D.step()
+        d_optimizer.step()
 
-        print("[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" % (epoch, opt.n_epochs, i, len(dataloader),
-                                                                         d_loss.item(), g_loss.item()))
+        # ================================================================== #
+        #                        Train the generator                         #
+        # ================================================================== #
 
-        batches_done = epoch * len(dataloader) + i
-        print(batches_done)
-        if batches_done % opt.sample_interval == 0:
-            save_image(gen_imgs.data[:25], 'images/%d.png' % batches_done, nrow=5, normalize=True)
+        # Compute loss with fake images
+        z = torch.randn(batch_size, latent_size).to(device)
+        fake_images = G(z)
+        outputs = D(fake_images)
+
+        # We train G to maximize log(D(G(z)) instead of minimizing log(1-D(G(z)))
+        # For the reason, see the last paragraph of section 3. https://arxiv.org/pdf/1406.2661.pdf
+        g_loss = criterion(outputs, real_labels)
+
+        # Backprop and optimize
+        reset_grad()
+        g_loss.backward()
+        g_optimizer.step()
+
+        if (i + 1) % 200 == 0:
+            print('Epoch [{}/{}], Step [{}/{}], d_loss: {:.4f}, g_loss: {:.4f}, D(x): {:.2f}, D(G(z)): {:.2f}'
+                  .format(epoch, num_epochs, i + 1, total_step, d_loss.item(), g_loss.item(),
+                          real_score.mean().item(), fake_score.mean().item()))
+
+    # Save real images
+    if (epoch + 1) == 1:
+        images = images.reshape(images.size(0), 1, 28, 28)
+        save_image(denorm(images), os.path.join(sample_dir, 'real_images.jpg'))
+
+    # Save sampled images
+    fake_images = fake_images.reshape(fake_images.size(0), 1, 28, 28)
+    save_image(denorm(fake_images), os.path.join(sample_dir, 'fake_images-{}.jpg'.format(epoch + 1)))
+
+# Save the model checkpoints
+# torch.save(G.state_dict(), 'G.ckpt')
+# torch.save(D.state_dict(), 'D.ckpt')
