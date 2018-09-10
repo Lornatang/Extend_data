@@ -152,7 +152,6 @@ for epoch in range(1, args.num_epochs + 1):
         images = images.reshape(images.size(0), 1, 28, 28)
         save_image(denorm(images), os.path.join(args.out_dir, 'real_images.jpg'))
 
-
-# Save the model checkpoints
-torch.save(G, '../../models/pytorch/gan/mnist/' + G.pth)
-torch.save(D, '../../models/pytorch/gan/mnist/' + D.pth)
+    # Save the model checkpoints
+    torch.save(G, '../../models/pytorch/gan/mnist/' + G.pth)
+    torch.save(D, '../../models/pytorch/gan/mnist/' + D.pth)
