@@ -8,225 +8,165 @@
 
 import argparse
 import os
-import time
+import numpy as np
+import math
 
-import torch
-from torch import nn
-from torch.utils import data
-from torchvision import datasets, transforms
+import torchvision.transforms as transforms
 from torchvision.utils import save_image
 
-# Device configuration
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+from torch.utils.data import DataLoader
+from torchvision import datasets
+from torch.autograd import Variable
 
-# Setting hyper-parameters
+import torch.nn as nn
+import torch.nn.functional as F
+import torch
+
+os.makedirs('images', exist_ok=True)
+
 parser = argparse.ArgumentParser()
-parser.add_argument('--img_dir', type=str, default='../data/mnist/',
-                    help="""input image path dir.Default: '../data/mnist/'.""")
-parser.add_argument('--external_dir', type=str, default='../data/mnist/external_data/',
-                    help="""input image path dir.Default: '../data/mnist/external_data/'.""")
-parser.add_argument('--noise', type=int, default=100,
-                    help="""Data noise. Default: 100.""")
-parser.add_argument('--hidden_size', type=int, default=64,
-                    help="""Hidden size. Default: 64.""")
-parser.add_argument('--batch_size', type=int, default=64,
-                    help="""Batch size. Default: 64.""")
-parser.add_argument('--lr', type=float, default=2e-4,
-                    help="""Train optimizer learning rate. Default: 2e-4.""")
-parser.add_argument('--img_size', type=int, default=96,
-                    help="""Input image size. Default: 96.""")
-parser.add_argument('--max_epochs', type=int, default=5,
-                    help="""Max epoch of train of. Default: 5.""")
-parser.add_argument('--display_epoch', type=int, default=1,
-                    help="""When epochs save image. Default: 1.""")
-parser.add_argument('--model_dir', type=str, default='../../models/pytorch/GAN/mnist/',
-                    help="""Model save path dir. Default: '../../models/pytorch/GAN/mnist/'.""")
-args = parser.parse_args()
+parser.add_argument('--n_epochs', type=int, default=200, help='number of epochs of training')
+parser.add_argument('--batch_size', type=int, default=64, help='size of the batches')
+parser.add_argument('--lr', type=float, default=0.0002, help='adam: learning rate')
+parser.add_argument('--b1', type=float, default=0.5, help='adam: decay of first order momentum of gradient')
+parser.add_argument('--b2', type=float, default=0.999, help='adam: decay of first order momentum of gradient')
+parser.add_argument('--n_cpu', type=int, default=8, help='number of cpu threads to use during batch generation')
+parser.add_argument('--latent_dim', type=int, default=100, help='dimensionality of the latent space')
+parser.add_argument('--img_size', type=int, default=28, help='size of each image dimension')
+parser.add_argument('--channels', type=int, default=1, help='number of image channels')
+parser.add_argument('--sample_interval', type=int, default=400, help='interval betwen image samples')
+opt = parser.parse_args()
+print(opt)
 
-# Create a directory if not exists
-if not os.path.exists(args.external_dir):
-    os.makedirs(args.external_dir)
+img_shape = (opt.channels, opt.img_size, opt.img_size)
 
-# Image processing
-transform = transforms.Compose([
-    transforms.Resize(args.img_size),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))])  # 3 for RGB channels
-
-# train dataset
-train_dataset = datasets.MNIST(root=args.img_dir,
-                               transform=transform,
-                               download=True,
-                               train=True)
-
-# Data loader
-data_loader = data.DataLoader(dataset=train_dataset,
-                              batch_size=args.batch_size,
-                              shuffle=True,
-                              drop_last=True)
+cuda = True if torch.cuda.is_available() else False
 
 
-# Generator
 class Generator(nn.Module):
     def __init__(self):
         super(Generator, self).__init__()
-        # layer1输入的是一个100x1x1的随机噪声, 输出尺寸(args.hidden_size * 8)x4x4
-        self.layer1 = nn.Sequential(
-            nn.ConvTranspose2d(args.noise, args.hidden_size * 8, 4, 1, 0),
-            nn.BatchNorm2d(args.hidden_size * 8),
-            nn.ReLU(True)
-        )
-        # layer2输出尺寸(args.hidden_size * 4)x8x8
-        self.layer2 = nn.Sequential(
-            nn.ConvTranspose2d(args.hidden_size * 8,
-                               args.hidden_size * 4, 4, 2, 1),
-            nn.BatchNorm2d(args.hidden_size * 4),
-            nn.ReLU(True)
-        )
-        # layer3输出尺寸(args.hidden_size * 2)x16x16
-        self.layer3 = nn.Sequential(
-            nn.ConvTranspose2d(args.hidden_size * 4,
-                               args.hidden_size * 2, 4, 2, 1),
-            nn.BatchNorm2d(args.hidden_size * 2),
-            nn.ReLU(True)
-        )
-        # layer4输出尺寸(args.hidden_size)x32x32
-        self.layer4 = nn.Sequential(
-            nn.ConvTranspose2d(args.hidden_size * 2,
-                               args.hidden_size, 4, 2, 1),
-            nn.BatchNorm2d(args.hidden_size),
-            nn.ReLU(True)
-        )
-        # layer5输出尺寸 1x96x96  BGR需要输入3x96x96
-        self.layer5 = nn.Sequential(
-            nn.ConvTranspose2d(args.hidden_size, 1, 5, 3, 1, bias=False),
+
+        def block(in_feat, out_feat, normalize=True):
+            layers = [nn.Linear(in_feat, out_feat)]
+            if normalize:
+                layers.append(nn.BatchNorm1d(out_feat, 0.8))
+            layers.append(nn.LeakyReLU(0.2, inplace=True))
+            return layers
+
+        self.model = nn.Sequential(
+            *block(opt.latent_dim, 128, normalize=False),
+            *block(128, 256),
+            *block(256, 512),
+            *block(512, 1024),
+            nn.Linear(1024, int(np.prod(img_shape))),
             nn.Tanh()
         )
 
-    # 定义Generator的前向传播
-    def forward(self, x):
-        out = self.layer1(x)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = self.layer5(out)
-        return out
+    def forward(self, z):
+        img = self.model(z)
+        img = img.view(img.size(0), *img_shape)
+        return img
 
 
-# 定义鉴别器网络D
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
-        # layer1 输入 1 x 96 x 96, 输出 (args.hidden_size) x 32 x 32
-        self.layer1 = nn.Sequential(
-            nn.Conv2d(1, args.hidden_size, 5, 3, 1),
-            nn.BatchNorm2d(args.hidden_size),
-            nn.LeakyReLU(0.2, True)
-        )
-        # layer2 输出 (args.hidden_size * 2) x 16 x 16
-        self.layer2 = nn.Sequential(
-            nn.Conv2d(args.hidden_size, args.hidden_size * 2, 4, 2, 1),
-            nn.BatchNorm2d(args.hidden_size * 2),
-            nn.LeakyReLU(0.2, True)
-        )
-        # layer3 输出 (args.hidden_size * 4) x 8 x 8
-        self.layer3 = nn.Sequential(
-            nn.Conv2d(args.hidden_size * 2, args.hidden_size * 4, 4, 2, 1),
-            nn.BatchNorm2d(args.hidden_size * 4),
-            nn.LeakyReLU(0.2, True)
-        )
-        # layer4 输出 (args.hidden_size * 8) x 4 x 4
-        self.layer4 = nn.Sequential(
-            nn.Conv2d(args.hidden_size * 4, args.hidden_size * 8, 4, 2, 1),
-            nn.BatchNorm2d(args.hidden_size * 8),
-            nn.LeakyReLU(0.2, True)
-        )
-        # layer5 输出一个数(概率)
-        self.layer5 = nn.Sequential(
-            nn.Conv2d(args.hidden_size * 8, 1, 4, 1, 0),
+
+        self.model = nn.Sequential(
+            nn.Linear(int(np.prod(img_shape)), 512),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(512, 256),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(256, 1),
             nn.Sigmoid()
         )
 
-    # 定义NetD的前向传播
-    def forward(self, x):
-        out = self.layer1(x)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = self.layer5(out)
-        return out
+    def forward(self, img):
+        img_flat = img.view(img.size(0), -1)
+        validity = self.model(img_flat)
+
+        return validity
 
 
-Generator = Generator().to(device)
-Discriminator = Discriminator().to(device)
-# if torch.cuda.is_available():
-#     Generator.load_state_dict(torch.load(args.model_dir + 'Generator.pth'))
-#     Discriminator.load_state_dict(torch.load(args.model_dir + 'Discriminator.pth', map_location='cpu'))
-# else:
-#     Generator.load_state_dict(torch.load(args.model_dir + 'Generator.pth', map_location='cpu'))
-#     Discriminator.load_state_dict(torch.load(args.model_dir + 'Discriminator.pth', map_location='cpu'))
-# Binary loss function optimization and Adam optimizer
-criterion = nn.BCELoss().to(device)
-optimizerG = torch.optim.Adam(
-    Generator.parameters(), lr=args.lr, betas=(0.5, 0.999))
-optimizerD = torch.optim.Adam(
-    Discriminator.parameters(), lr=args.lr, betas=(0.5, 0.999))
+# Loss function
+adversarial_loss = torch.nn.BCELoss()
 
+# Initialize generator and discriminator
+generator = Generator()
+discriminator = Discriminator()
 
-def main():
-    Generator.train()
-    Discriminator.train()
-    label = torch.FloatTensor(args.batch_size)
-    real_label = 1
-    fake_label = 0
-    for epoch in range(1, args.max_epochs + 1):
-        start = time.time()
-        for i, (img, _) in enumerate(data_loader):
-            # 固定生成器G，训练鉴别器D
-            optimizerD.zero_grad()
-            # 让D尽可能的把真图片判别为1
-            img = img.to(device)
-            output = Discriminator(img)
+if cuda:
+    generator.cuda()
+    discriminator.cuda()
+    adversarial_loss.cuda()
 
-            label.data.fill_(real_label)
-            label = label.to(device)
-            errd_real = criterion(output, label)
-            errd_real.backward()
-            # 让D尽可能把假图片判别为0
-            label.data.fill_(fake_label)
-            noise = torch.randn(args.batch_size, args.noise, 1, 1)
-            noise = noise.to(device)
-            # 生成假图
-            fake = Generator(noise)
-            output = Discriminator(fake.detach())  # 避免梯度传到G，因为G不用更新
-            errd_fake = criterion(output, label)
-            errd_fake.backward()
-            errd = errd_fake + errd_real
-            optimizerD.step()
+# Configure data loader
+os.makedirs('../../data/mnist', exist_ok=True)
+dataloader = torch.utils.data.DataLoader(
+    datasets.MNIST('../../data/mnist', train=True, download=True,
+                   transform=transforms.Compose([
+                       transforms.ToTensor(),
+                       transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                   ])),
+    batch_size=opt.batch_size, shuffle=True)
 
-            # 固定鉴别器D，训练生成器G
-            optimizerG.zero_grad()
-            # 让D尽可能把G生成的假图判别为1
-            label.data.fill_(real_label)
-            label = label.to(device)
-            output = Discriminator(fake)
-            errg = criterion(output, label)
-            errg.backward()
-            optimizerG.step()
+# Optimizers
+optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
+optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
 
-            if (i + 1) % 2 == 0:
-                end = time.time()
-                print(f"Epoch: [{epoch}/{args.max_epochs}], "
-                      f"Step: [{i}/{len(data_loader)}], "
-                      f"Loss_D: {errd.item():.3f}, "
-                      f"Loss_G {errg.item():.3f}, "
-                      f"Time: {end-start:.2f} sec.")
-                save_image(fake.data, f"{args.external_dir}/{epoch}.jpg", normalize=True)
+Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
-                # Save the model checkpoints
-                torch.save(Generator.state_dict(), args.model_dir + 'Generator.pth')
-                torch.save(Discriminator.state_dict(), args.model_dir + 'Discriminator.pth')
+# ----------
+#  Training
+# ----------
 
+for epoch in range(opt.n_epochs):
+    for i, (imgs, _) in enumerate(dataloader):
 
-if __name__ == '__main__':
-    main()
+        # Adversarial ground truths
+        valid = Variable(Tensor(imgs.size(0), 1).fill_(1.0), requires_grad=False)
+        fake = Variable(Tensor(imgs.size(0), 1).fill_(0.0), requires_grad=False)
+
+        # Configure input
+        real_imgs = Variable(imgs.type(Tensor))
+
+        # -----------------
+        #  Train Generator
+        # -----------------
+
+        optimizer_G.zero_grad()
+
+        # Sample noise as generator input
+        z = Variable(Tensor(np.random.normal(0, 1, (imgs.shape[0], opt.latent_dim))))
+
+        # Generate a batch of images
+        gen_imgs = generator(z)
+
+        # Loss measures generator's ability to fool the discriminator
+        g_loss = adversarial_loss(discriminator(gen_imgs), valid)
+
+        g_loss.backward()
+        optimizer_G.step()
+
+        # ---------------------
+        #  Train Discriminator
+        # ---------------------
+
+        optimizer_D.zero_grad()
+
+        # Measure discriminator's ability to classify real from generated samples
+        real_loss = adversarial_loss(discriminator(real_imgs), valid)
+        fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
+        d_loss = (real_loss + fake_loss) / 2
+
+        d_loss.backward()
+        optimizer_D.step()
+
+        print("[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" % (epoch, opt.n_epochs, i, len(dataloader),
+                                                                         d_loss.item(), g_loss.item()))
+
+        batches_done = epoch * len(dataloader) + i
+        print(batches_done)
+        if batches_done % opt.sample_interval == 0:
+            save_image(gen_imgs.data[:25], 'images/%d.png' % batches_done, nrow=5, normalize=True)
