@@ -7,6 +7,8 @@
 """
 
 import os
+import argparse
+
 import torch
 import torchvision
 import torch.nn as nn
@@ -17,16 +19,20 @@ from torchvision.utils import save_image
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Hyper-parameters
-latent_size = 64
-hidden_size = 256
-image_size = 784
-num_epochs = 100
-batch_size = 100
-sample_dir = 'samples'
+parser = argparse.ArgumentParser("GAN for mnist.\n")
+parser.add_argument('--latent_size', type=int, default=100)  # noise size
+parser.add_argument('--hidden_size', type=int, default=512)  # hidden size
+parser.add_argument('--image_size', type=int, default=28 * 28)  # image size width * hight
+parser.add_argument('--num_epochs', type=int, default=100)  # train epochs
+parser.add_argument('--batch_size', type=int, default=100)
+parser.add_argument('--out_dir', type=str, default='generate')  # generate data
+parser.add_argument('--data_dir', type=str, default='../data/mnist')  # generate mnist data
+parser.add_argument('--model_path', type=str, default='../../models/pytorch/gan/')
+args = parser.parse_args()
 
 # Create a directory if not exists
-if not os.path.exists(sample_dir):
-    os.makedirs(sample_dir)
+if not os.path.exists(args.out_dir):
+    os.makedirs(args.out_dir)
 
 # Image processing
 transform = transforms.Compose([
@@ -35,40 +41,44 @@ transform = transforms.Compose([
                          std=(0.5, 0.5, 0.5))])
 
 # MNIST dataset
-mnist = torchvision.datasets.MNIST(root='../data',
+mnist = torchvision.datasets.MNIST(root=args.data_dir,
                                    train=True,
                                    transform=transform,
                                    download=True)
 
 # Data loader
 data_loader = torch.utils.data.DataLoader(dataset=mnist,
-                                          batch_size=batch_size,
+                                          batch_size=args.batch_size,
                                           shuffle=True)
 
 # Discriminator
 D = nn.Sequential(
-    nn.Linear(image_size, hidden_size),
+    nn.Linear(args.image_size, args.hidden_size),
     nn.LeakyReLU(0.2),
-    nn.Linear(hidden_size, hidden_size),
+    nn.Linear(args.hidden_size, args.hidden_size),
     nn.LeakyReLU(0.2),
-    nn.Linear(hidden_size, 1),
-    nn.Sigmoid())
+    nn.Linear(args.hidden_size, 1),
+    nn.Sigmoid()
+)
 
 # Generator
 G = nn.Sequential(
-    nn.Linear(latent_size, hidden_size),
+    nn.Linear(args.latent_size, args.hidden_size),
     nn.ReLU(),
-    nn.Linear(hidden_size, hidden_size),
+    nn.Linear(args.hidden_size, args.hidden_size),
     nn.ReLU(),
-    nn.Linear(hidden_size, image_size),
-    nn.Tanh())
+    nn.Linear(args.hidden_size, args.image_size),
+    nn.Tanh()
+)
 
 # Device setting
-D = torch.load('D.pkl')
-G = torch.load('G.pkl')
+D = D.to(device)
+G = G.to(device)
+# D = torch.load(args.model_path + 'D.pth')
+# G = torch.load(args.model_path + 'G.pth')
 
 # Binary cross entropy loss and optimizer
-criterion = nn.BCELoss()
+criterion = nn.BCELoss().to(device)
 d_optimizer = torch.optim.Adam(D.parameters(), lr=0.0002)
 g_optimizer = torch.optim.Adam(G.parameters(), lr=0.0002)
 
@@ -78,20 +88,15 @@ def denorm(x):
     return out.clamp(0, 1)
 
 
-def reset_grad():
-    d_optimizer.zero_grad()
-    g_optimizer.zero_grad()
-
-
 # Start training
 total_step = len(data_loader)
-for epoch in range(1, num_epochs+1):
+for epoch in range(1, args.num_epochs + 1):
     for i, (images, _) in enumerate(data_loader):
-        images = images.reshape(batch_size, -1).to(device)
+        images = images.reshape(args.batch_size, -1).to(device)
 
         # Create the labels which are later used as input for the BCE loss
-        real_labels = torch.ones(batch_size, 1).to(device)
-        fake_labels = torch.zeros(batch_size, 1).to(device)
+        real_labels = torch.ones(args.batch_size, 1).to(device)
+        fake_labels = torch.zeros(args.batch_size, 1).to(device)
 
         # ================================================================== #
         #                      Train the discriminator                       #
@@ -105,7 +110,7 @@ for epoch in range(1, num_epochs+1):
 
         # Compute BCELoss using fake images
         # First term of the loss is always zero since fake_labels == 0
-        z = torch.randn(batch_size, latent_size).to(device)
+        z = torch.randn(args.batch_size, args.latent_size).to(device)
         fake_images = G(z)
         outputs = D(fake_images)
         d_loss_fake = criterion(outputs, fake_labels)
@@ -113,7 +118,8 @@ for epoch in range(1, num_epochs+1):
 
         # Backprop and optimize
         d_loss = d_loss_real + d_loss_fake
-        reset_grad()
+        d_optimizer.zero_grad()
+        g_optimizer.zero_grad()
         d_loss.backward()
         d_optimizer.step()
 
@@ -122,7 +128,7 @@ for epoch in range(1, num_epochs+1):
         # ================================================================== #
 
         # Compute loss with fake images
-        z = torch.randn(batch_size, latent_size).to(device)
+        z = torch.randn(args.batch_size, args.latent_size).to(device)
         fake_images = G(z)
         outputs = D(fake_images)
 
@@ -131,25 +137,22 @@ for epoch in range(1, num_epochs+1):
         g_loss = criterion(outputs, real_labels)
 
         # Backprop and optimize
-        reset_grad()
+        d_optimizer.zero_grad()
+        g_optimizer.zero_grad()
         g_loss.backward()
         g_optimizer.step()
 
         if (i + 1) % 200 == 0:
-            print('Epoch [{}/{}], Step [{}/{}], d_loss: {:.4f}, g_loss: {:.4f}, D(x): {:.2f}, D(G(z)): {:.2f}'
-                  .format(epoch, num_epochs, i + 1, total_step, d_loss.item(), g_loss.item(),
-                          real_score.mean().item(), fake_score.mean().item()))
+            print(f"Epoch [{epoch}/{num_epochs}], Step [{i+1}/{total_step}], d_loss: {d_loss.item():.4f}, g_loss: {g_loss.item():.4f}, D(x): {real_score.mean().item():.2f}, D(G(z)): {fake_score.mean().item():.2f}")
+            fake_images = fake_images.reshape(fake_images.size(0), 1, 28, 28)
+            save_image(denorm(fake_images), os.path.join(args.out_dir, 'fake_images-{}.jpg'.format(epoch + 1)))
 
     # Save real images
     if epoch == 1:
         images = images.reshape(images.size(0), 1, 28, 28)
-        save_image(denorm(images), os.path.join(sample_dir, 'real_images.jpg'))
+        save_image(denorm(images), os.path.join(args.out_dir, 'real_images.jpg'))
 
-    # Save sampled images
-    if epoch % 2 == 0:
-        fake_images = fake_images.reshape(fake_images.size(0), 1, 28, 28)
-        save_image(denorm(fake_images), os.path.join(sample_dir, 'fake_images-{}.jpg'.format(epoch + 1)))
 
 # Save the model checkpoints
-torch.save(G, 'G.pkl')
-torch.save(D, 'D.pkl')
+torch.save(G, '../../models/pytorch/gan/mnist/' + G.pth)
+torch.save(D, '../../models/pytorch/gan/mnist/' + D.pth)
