@@ -64,8 +64,8 @@ G = nn.Sequential(
     nn.Tanh())
 
 # Device setting
-D = D.to(device)
-G = G.to(device)
+D = torch.load('D.pkl')
+G = torch.load('G.pkl')
 
 # Binary cross entropy loss and optimizer
 criterion = nn.BCELoss()
@@ -141,13 +141,14 @@ for epoch in range(1, num_epochs+1):
                           real_score.mean().item(), fake_score.mean().item()))
 
     # Save real images
-    if epoch % 2 == 0:
+    if epoch == 1:
         images = images.reshape(images.size(0), 1, 28, 28)
         save_image(denorm(images), os.path.join(sample_dir, 'real_images.jpg'))
 
     # Save sampled images
-    fake_images = fake_images.reshape(fake_images.size(0), 1, 28, 28)
-    save_image(denorm(fake_images), os.path.join(sample_dir, 'fake_images-{}.jpg'.format(epoch + 1)))
+    if epoch % 2 == 0:
+        fake_images = fake_images.reshape(fake_images.size(0), 1, 28, 28)
+        save_image(denorm(fake_images), os.path.join(sample_dir, 'fake_images-{}.jpg'.format(epoch + 1)))
 
 # Save the model checkpoints
 torch.save(G, 'G.pkl')
