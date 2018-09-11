@@ -104,3 +104,4 @@ venv.bak/
 .mypy_cache/
 mnist/generate/
 data
+*.DS_Store
