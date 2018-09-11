@@ -27,7 +27,7 @@ parser.add_argument('--num_epochs', type=int, default=100)  # train epochs
 parser.add_argument('--batch_size', type=int, default=100)
 parser.add_argument('--out_dir', type=str, default='generate')  # generate data
 parser.add_argument('--data_dir', type=str, default='../data/mnist')  # generate mnist data
-parser.add_argument('--model_path', type=str, default='../../models/pytorch/gan/')
+parser.add_argument('--model_path', type=str, default='../../models/pytorch/gan/mnist/')
 args = parser.parse_args()
 
 # Create a directory if not exists
@@ -72,10 +72,8 @@ G = nn.Sequential(
 )
 
 # Device setting
-D = D.to(device)
-G = G.to(device)
-# D = torch.load(args.model_path + 'D.pth')
-# G = torch.load(args.model_path + 'G.pth')
+D = torch.load(args.model_path + 'D.pth')
+G = torch.load(args.model_path + 'G.pth')
 
 # Binary cross entropy loss and optimizer
 criterion = nn.BCELoss().to(device)
