@@ -1,8 +1,8 @@
 """
 # author: shiyipaisizuo
 # contact: shiyipaisizuo@gmail.com
-# file: train.py
-# time: 2018/9/01 07:27
+# file: main.py
+# time: 2018/9/11 11:49
 # license: MIT
 """
 
@@ -22,12 +22,12 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 parser = argparse.ArgumentParser("GAN for mnist.\n")
 parser.add_argument('--latent_size', type=int, default=100)  # latent size
 parser.add_argument('--hidden_size', type=int, default=256)  # hidden size
-parser.add_argument('--image_size', type=int, default=28 * 28)  # image size width * hight
+parser.add_argument('--image_size', type=int, default=128 * 128 * 3)  # image size width * hight
 parser.add_argument('--num_epochs', type=int, default=100)  # train epochs
-parser.add_argument('--batch_size', type=int, default=100)
+parser.add_argument('--batch_size', type=int, default=3)
 parser.add_argument('--out_dir', type=str, default='generate')  # generate data
-parser.add_argument('--data_dir', type=str, default='../data/mnist')  # generate mnist data
-parser.add_argument('--model_path', type=str, default='../../models/pytorch/gan/mnist/')
+parser.add_argument('--data_dir', type=str, default='../data/animals')  # generate mnist data
+parser.add_argument('--model_path', type=str, default='../../models/pytorch/gan/dog/')
 args = parser.parse_args()
 
 # Create a directory if not exists
@@ -41,13 +41,11 @@ transform = transforms.Compose([
                          std=(0.5, 0.5, 0.5))])
 
 # MNIST dataset
-mnist = torchvision.datasets.MNIST(root=args.data_dir,
-                                   train=True,
-                                   transform=transform,
-                                   download=True)
+dog = torchvision.datasets.ImageFolder(root=args.data_dir,
+                                       transform=transform)
 
 # Data loader
-data_loader = torch.utils.data.DataLoader(dataset=mnist,
+data_loader = torch.utils.data.DataLoader(dataset=dog,
                                           batch_size=args.batch_size,
                                           shuffle=True)
 
@@ -72,6 +70,8 @@ G = nn.Sequential(
 )
 
 # Device setting
+# D = D.to(device)
+# G = G.to(device)
 D = torch.load(args.model_path + 'D.pth')
 G = torch.load(args.model_path + 'G.pth')
 
@@ -140,21 +140,21 @@ for epoch in range(1, args.num_epochs + 1):
         g_loss.backward()
         g_optimizer.step()
 
-        if (i + 1) % 200 == 0:
+        if i == 0:
             print(f"Epoch [{epoch}/{args.num_epochs}], "
                   f"Step [{i+1}/{total_step}], "
                   f"d_loss: {d_loss.item():.4f}, "
                   f"g_loss: {g_loss.item():.4f}, "
                   f"D(x): {real_score.mean().item():.2f}, "
                   f"D(G(z)): {fake_score.mean().item():.2f}")
-            fake_images = fake_images.reshape(fake_images.size(0), 1, 28, 28)
+            fake_images = fake_images.reshape(fake_images.size(0), 3, 128, 128)
             save_image(denorm(fake_images), os.path.join(args.out_dir, f"fake_images-{epoch+1}.jpg"))
 
     # Save real images
     if epoch == 1:
-        images = images.reshape(images.size(0), 1, 28, 28)
+        images = images.reshape(images.size(0), 3, 128, 128)
         save_image(denorm(images), os.path.join(args.out_dir, 'real_images.jpg'))
 
     # Save the model checkpoints
-    # torch.save(G, '../../models/pytorch/gan/mnist/G.pth')
-    # torch.save(D, '../../models/pytorch/gan/mnist/D.pth')
+    torch.save(G, '../../models/pytorch/gan/dog/G.pth')
+    torch.save(D, '../../models/pytorch/gan/dog/D.pth')
