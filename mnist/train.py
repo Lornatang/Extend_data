@@ -20,7 +20,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Hyper-parameters
 parser = argparse.ArgumentParser("GAN for mnist.\n")
-parser.add_argument('--latent_size', type=int, default=100)  # noise size
+parser.add_argument('--latent_size', type=int, default=100)  # latent size
 parser.add_argument('--hidden_size', type=int, default=256)  # hidden size
 parser.add_argument('--image_size', type=int, default=28 * 28)  # image size width * hight
 parser.add_argument('--num_epochs', type=int, default=100)  # train epochs
@@ -143,9 +143,14 @@ for epoch in range(1, args.num_epochs + 1):
         g_optimizer.step()
 
         if (i + 1) % 200 == 0:
-            print(f"Epoch [{epoch}/{args.num_epochs}], Step [{i+1}/{total_step}], d_loss: {d_loss.item():.4f}, g_loss: {g_loss.item():.4f}, D(x): {real_score.mean().item():.2f}, D(G(z)): {fake_score.mean().item():.2f}")
+            print(f"Epoch [{epoch}/{args.num_epochs}], "
+                  f"Step [{i+1}/{total_step}], "
+                  f"d_loss: {d_loss.item():.4f}, "
+                  f"g_loss: {g_loss.item():.4f}, "
+                  f"D(x): {real_score.mean().item():.2f}, "
+                  f"D(G(z)): {fake_score.mean().item():.2f}")
             fake_images = fake_images.reshape(fake_images.size(0), 1, 28, 28)
-            save_image(denorm(fake_images), os.path.join(args.out_dir, 'fake_images-{}.jpg'.format(epoch + 1)))
+            save_image(denorm(fake_images), os.path.join(args.out_dir, f"fake_images-{epoch+1}.jpg"))
 
     # Save real images
     if epoch == 1:
@@ -153,5 +158,5 @@ for epoch in range(1, args.num_epochs + 1):
         save_image(denorm(images), os.path.join(args.out_dir, 'real_images.jpg'))
 
     # Save the model checkpoints
-    torch.save(G, '../../models/pytorch/gan/mnist/' + G.pth)
-    torch.save(D, '../../models/pytorch/gan/mnist/' + D.pth)
+    torch.save(G, '../../models/pytorch/gan/mnist/G.pth')
+    torch.save(D, '../../models/pytorch/gan/mnist/D.pth')
